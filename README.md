@@ -1,169 +1,141 @@
-# TCB Multi-Plane 3D Scroller Demo
+# TCB Multi-Plane 3D Scroller
 
-A faithful Golang + Ebiten port of the classic "Multi Plane 3D Scroller" from TCB (The CareBears) in the Union Demo (in 1989).
+A Go/Ebitengine port of The CareBears' “Super-Multi-Plane-3D-Scroller-And-A-Whole-Lot-More Screen” from the 1989 Union Demo.
 
-![Demo Screenshot](screenshot.png)
-
-## Overview
-
-This demo recreates the iconic TCB "Super-Multi-Plane-3D-Scroller-And-A-Whole-Lot-More Screen" featuring:
-- 3D bending scrolltext with multiple wave forms
-- 32-layer parallax scrolling mountains
-- Distorted TCB logo with sine wave effects
-- Rotating TCB text
-- YM chiptune music (Thundercats theme by Mad Max)
-- Authentic raster color effects
-
-## Features
-
-### 3D Scrolling Text
-- 8 different wave forms controlled by `^0` through `^7` control codes in the text
-- Real-time 3D transformation with perspective projection
-- Depth-based character sorting for proper overlap
-- Smooth transitions between wave forms
-- Raster gradient colors applied to text
-
-### Visual Effects
-- **Parallax Mountains**: 32 independent scrolling layers creating a depth illusion
-- **Logo Distortion**: Line-by-line sine wave distortion of the TCB logo
-- **Rotating Text**: The "TCB" text rotates around a horizontal axis
-- **Color Rasters**: Authentic Atari ST-style color gradients
-
-### Technical Implementation
-- Pure Go implementation using Ebiten v2 game engine
-- YM music playback via custom YM player
-- 60 FPS performance on modern hardware
-- Faithful recreation of original demo effects
+The demo includes the original 3D bending scrolltext, 32 parallax mountain strips, line-distorted TCB logo, rotating emblem, raster colors, and Mad Max's *Thundercats* YM music.
 
 ## Requirements
 
-- Go 1.19 or higher
-- Ebiten v2.6.3 or higher
+- Go 1.25 or newer
+- macOS, Linux, or Windows for the desktop build
+- JDK 17 and Android SDK 36 for the Android build
 
-## Installation
+The project pins Ebitengine 2.9.11 and `ym-player` revision `3f73bdca82e5`.
 
-```bash
-# Clone the repository
-git clone https://github.com/olivierh59500/tcb-multi-plane-3d-scroller
-cd tcb-multi-plane-3d-scroller
+## Desktop
 
-# Install dependencies
-go mod download
+Run directly from the repository:
 
-# Build and run
-go run main.go
+```sh
+go run ./cmd/tcb-scroller
 ```
 
-## Project Structure
+Build an executable:
 
-```
-tcb-multi-plane-3d-scroller/
-├── main.go             # Main demo implementation
-├── go.mod              # Go module definition
-├── go.sum              # Dependency checksums
-├── README.md           # This file
-└── assets/             # Demo assets
-    ├── rast.png        # Raster gradient colors (320x200)
-    ├── mountains.png   # Parallax mountain layers (1024x320)
-    ├── logo.png        # TCB logo graphics (320x48)
-    ├── bgfont.png      # Bitmap font (320x198, 32x33 per character)
-    └── Thundercats.ym  # YM music file
+```sh
+go build -o tcb-scroller ./cmd/tcb-scroller
+./tcb-scroller
 ```
 
-## Asset Details
+Press `F` to toggle fullscreen mode.
 
-### Font Layout
-The bitmap font (`bgfont.png`) contains characters arranged in a 10x6 grid:
-- Each character is 32x33 pixels
-- Characters include: A-Z, space, and punctuation (! ( ) , . : ;)
-- Font uses white pixels on transparent background
+## Android / Pixel
 
-### Mountain Layers
-The `mountains.png` file contains 32 horizontal strips:
-- Each strip is 1024x10 pixels
-- Different shades create depth perception
-- Strips scroll at different speeds for parallax effect
+The Android project targets API 36, requires API 23 or newer, and currently builds the `arm64-v8a` ABI used by the Pixel 10a. Connect one authorized Android device, then run:
 
-### Logo Structure
-The `logo.png` contains:
-- Full logo graphic (303x48 pixels)
-- TCB text portion at position (114,0) with size 79x15
-- Used for both distortion effect and rotating text
-
-## Technical Notes
-
-### Optimization Strategies
-- Pre-calculated character positions
-- Efficient depth sorting algorithm
-- Reused DrawImageOptions to minimize allocations
-- Proper canvas clearing to avoid overdraw
-
-### Wave Forms
-The demo includes 8 different scroll wave effects:
-1. **Form 0**: No wave (flat scrolling)
-2. **Form 1**: Slow sine wave
-3. **Form 2**: Medium sine wave
-4. **Form 3**: Fast sine wave
-5. **Form 4**: Slow distortion
-6. **Form 5**: Medium distortion
-7. **Form 6**: Fast distortion
-8. **Form 7**: Split wave effect
-
-### Coordinate System
-- Screen resolution: 768x536
-- ST canvas: 320x200 (scaled 2x)
-- Character spacing: 32 pixels
-- Base scroll speed: 4 pixels per frame
-
-## Original Credits
-
-- **Original Demo**: The CareBears (TCB)
-- **Music**: Mad Max (Thundercats theme)
-- **Golang Port**: Olivier Houte aka Bilizir from DMA
-
-## Building from Source
-
-### Standard Build
-```bash
-go build -o tcb-demo main.go
-./tcb-demo
+```sh
+./scripts/run-android.sh
 ```
 
-### Optimized Build
-```bash
-go build -ldflags="-s -w" -o tcb-demo main.go
+The script:
+
+1. locates the Android SDK and JDK 17;
+2. generates `android/app/libs/tcbscroller.aar` with the same Ebitengine 2.9.11 version as the game;
+3. builds a debug APK with the checked-in Gradle wrapper;
+4. requires exactly one authorized device;
+5. installs and launches `com.olivierh59500.tcbscroller/.MainActivity`.
+
+Generated artifacts are:
+
+```text
+android/app/libs/tcbscroller.aar
+android/app/libs/tcbscroller-sources.jar
+android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-### Cross-Platform Building
-```bash
-# Windows
-GOOS=windows GOARCH=amd64 go build -o tcb-demo.exe main.go
+The activity uses immersive `sensorLandscape` mode and handles pause/resume through Ebitengine's mobile view. The original 768×536 logical canvas is kept intact, so wide displays receive undistorted, centered output.
 
-# macOS
-GOOS=darwin GOARCH=amd64 go build -o tcb-demo-mac main.go
+If the SDK or Java cannot be detected automatically, set:
 
-# Linux
-GOOS=linux GOARCH=amd64 go build -o tcb-demo-linux main.go
+```sh
+export ANDROID_HOME=/path/to/android-sdk
+export JAVA_HOME=/path/to/jdk-17
 ```
 
-## Contributing
+## Validation
 
-Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+Run the Go checks:
 
-## License
+```sh
+go test ./...
+go test -race ./...
+go vet ./...
+```
 
-This port is provided for educational and historical preservation purposes. The original demo content and music remain the property of their respective creators (The CareBears and Mad Max).
+Run the allocation benchmarks:
 
-## See Also
+```sh
+go test -run '^$' \
+  -bench 'Benchmark(ScrollCalculation|YMPlayerRead)$' \
+  -benchmem
+```
 
-- [CODEF Framework](http://codef.namwollem.co.uk/) - The original web framework
-- [Ebiten Game Engine](https://ebiten.org/) - The Go game engine used for this port
-- [Demozoo Entry](https://demozoo.org/) - Original demo information
+Run Android lint after generating the AAR:
 
-## Acknowledgments
+```sh
+JAVA_HOME=/path/to/jdk-17 \
+ANDROID_HOME=/path/to/android-sdk \
+./android/gradlew -p android lintDebug
+```
 
-Special thanks to:
-- The CareBears for creating this iconic demo
-- The Atari ST demoscene community
-- The Ebiten development team
-- Everyone working to preserve demoscene history
+### Measured micro-benchmarks
+
+Apple M4 Max results for the original revision and this revision, using the same 4096-sample PCM block and scroll state:
+
+| Operation | Original | Optimized |
+|---|---:|---:|
+| `YMPlayer.Read` | ~36.2 µs, 40,960 B, 3 allocs | ~11.2 µs, 0 B, 0 allocs |
+| Scroll position calculation | ~454 ns, 240 B, 33 allocs | ~104 ns, 0 B, 0 allocs |
+
+These are focused CPU micro-benchmarks, not whole-frame or device battery measurements.
+
+## Implementation notes
+
+- Music synthesis and Ebitengine output both use 48 kHz, matching the Pixel audio path.
+- `YMPlayer.Read` writes interleaved 16-bit stereo PCM directly into Ebitengine's buffer and performs no per-read allocation.
+- Audio initialization is deferred until the first `Update`, after Android has created its application context.
+- Scroll control codes are preprocessed once; the animation loop uses fixed arrays, trigonometric recurrences, and allocation-free insertion sort.
+- Mountain strips, logo scanlines, and glyphs are batched with `DrawTriangles` instead of creating sub-images and draw options every frame.
+- A small Kage shader applies the raster colors while the glyphs are rendered, removing the old intermediate scroll canvas and compositing pass.
+- Unchanged frames are not rebuilt when a display refreshes faster than the game's 60 updates per second.
+
+## Project structure
+
+```text
+.
+├── game.go                         # shared game and renderer
+├── game_test.go                    # audio, shader, and performance tests
+├── cmd/tcb-scroller/main.go        # desktop entry point
+├── mobile/mobile.go                # Ebitengine mobile bridge
+├── android/                        # Android activity and Gradle wrapper
+├── scripts/run-android.sh          # AAR → APK → device workflow
+└── assets/                         # embedded graphics and YM music
+```
+
+All runtime assets use `go:embed`; the application does not depend on its working directory.
+
+## Asset layout
+
+- `rast.png`: 1×200 raster color table
+- `mountains.png`: 32 strips of 1024×10 pixels
+- `logo.png`: logo and rotating TCB emblem
+- `bgfont.png`: 32×33 bitmap glyph grid
+- `Thundercats.ym`: embedded YM music
+
+## Credits
+
+- Original demo: The CareBears (TCB)
+- Music: Mad Max
+- Go port: Olivier Houte / Bilizir, DMA
+
+This port is provided for educational and historical-preservation purposes. The original demo content and music remain the property of their respective creators.

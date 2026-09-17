@@ -1,1 +1,14 @@
 .DS_Store
+
+# Local desktop build
+/tcb-scroller
+
+# Android Studio and generated Android artifacts
+/android/.gradle/
+/android/.idea/
+/android/local.properties
+/android/build/
+/android/app/build/
+/android/app/libs/*.aar
+/android/app/libs/*-sources.jar
+!/android/app/libs/.gitkeep
