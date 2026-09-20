@@ -4,6 +4,8 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"github.com/olivierh59500/democonstructionkit/composite"
+	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"image"
 	"image/color"
 	_ "image/png"
@@ -154,10 +156,12 @@ func (y *YMPlayer) Close() error {
 
 // Game contains the complete standalone TCB screen.
 type Game struct {
-	rasters   *ebiten.Image
-	mountains *ebiten.Image
-	logo      *ebiten.Image
-	font      *ebiten.Image
+	scrollRenderer *scrolling.Scrolling
+	scrollBatch    *composite.QuadBatch
+	rasters        *ebiten.Image
+	mountains      *ebiten.Image
+	logo           *ebiten.Image
+	font           *ebiten.Image
 
 	logoCenter   *ebiten.Image
 	scrollShader *ebiten.Shader
@@ -549,50 +553,53 @@ func (g *Game) appendMountainStrip(layer, xPos, yPos int) {
 }
 
 func (g *Game) drawScroll3D(stage *ebiten.Image) {
-	g.stripVertices = g.stripVertices[:0]
-	g.stripIndices = g.stripIndices[:0]
-	for i := range g.printPos {
-		position := g.printPos[i]
-		if position.letter == 0 || position.z <= 0 {
-			continue
-		}
-
-		ch := rune(position.letter)
-		var tileRect image.Rectangle
-		if ch >= 0 && ch < rune(len(g.fontTileRects)) {
-			tileRect = g.fontTileRects[ch]
-		}
-		if tileRect.Empty() && ch >= 'a' && ch <= 'z' {
-			ch = ch - 'a' + 'A'
-			tileRect = g.fontTileRects[ch]
-		}
-		if tileRect.Empty() {
-			continue
-		}
-
-		scale := float32(position.z)
-		localY := float32(position.y) - 16.5*scale
-		vertexBase := len(g.stripVertices)
-		g.stripVertices, g.stripIndices = appendTexturedQuad(
-			g.stripVertices, g.stripIndices,
-			stageX+2*(float32(position.x)-16*scale),
-			stageY+2*localY,
-			64*scale, 66*scale,
-			float32(tileRect.Min.X), float32(tileRect.Min.Y), 32, 33,
-		)
-		g.stripVertices[vertexBase].ColorR = localY
-		g.stripVertices[vertexBase+1].ColorR = localY
-		g.stripVertices[vertexBase+2].ColorR = localY + 33*scale
-		g.stripVertices[vertexBase+3].ColorR = localY + 33*scale
-	}
-
-	if len(g.stripIndices) == 0 || g.scrollShader == nil {
+	if g.scrollShader == nil {
 		return
 	}
-	op := &ebiten.DrawTrianglesShaderOptions{}
-	op.Images[0] = g.font
-	op.Images[1] = g.rasters
-	stage.DrawTrianglesShader(g.stripVertices, g.stripIndices, g.scrollShader, op)
+	if g.scrollRenderer == nil {
+		var err error
+		g.scrollRenderer, err = scrolling.FromImages(make([]*ebiten.Image, len(g.printPos)), 1)
+		if err != nil {
+			panic(err)
+		}
+		g.scrollBatch = composite.NewQuadBatch(len(g.printPos))
+		g.scrollBatch.AlternateDiagonal = true
+	}
+	g.scrollBatch.Shader = g.scrollShader
+	g.scrollBatch.ShaderOptions.Images[0] = g.font
+	g.scrollBatch.ShaderOptions.Images[1] = g.rasters
+	g.scrollBatch.Begin(stage, g.font)
+	state := scrolling.IdentityState()
+	state.Paint = func(dst *ebiten.Image, s scrolling.Sample, op ebiten.DrawImageOptions) {
+		p := g.printPos[s.Index]
+		if p.letter == 0 || p.z <= 0 {
+			return
+		}
+		ch := rune(p.letter)
+		var r image.Rectangle
+		if ch >= 0 && ch < rune(len(g.fontTileRects)) {
+			r = g.fontTileRects[ch]
+		}
+		if r.Empty() && ch >= 'a' && ch <= 'z' {
+			r = g.fontTileRects[ch-'a'+'A']
+		}
+		if r.Empty() {
+			return
+		}
+		scale := float32(p.z)
+		localY := float32(p.y) - 16.5*scale
+		x, y, w, h := float32(stageX)+2*(float32(p.x)-16*scale), float32(stageY)+2*localY, 64*scale, 66*scale
+		sx, sy := float32(r.Min.X), float32(r.Min.Y)
+		vertices := [4]ebiten.Vertex{
+			{DstX: x, DstY: y, SrcX: sx, SrcY: sy, ColorR: localY, ColorG: 1, ColorB: 1, ColorA: 1},
+			{DstX: x + w, DstY: y, SrcX: sx + 32, SrcY: sy, ColorR: localY, ColorG: 1, ColorB: 1, ColorA: 1},
+			{DstX: x, DstY: y + h, SrcX: sx, SrcY: sy + 33, ColorR: localY + 33*scale, ColorG: 1, ColorB: 1, ColorA: 1},
+			{DstX: x + w, DstY: y + h, SrcX: sx + 32, SrcY: sy + 33, ColorR: localY + 33*scale, ColorG: 1, ColorB: 1, ColorA: 1},
+		}
+		g.scrollBatch.Quad(vertices)
+	}
+	g.scrollRenderer.DrawAt(stage, state)
+	g.scrollBatch.Flush()
 }
 
 func (g *Game) Layout(_, _ int) (int, int) {
