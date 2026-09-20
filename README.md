@@ -139,3 +139,9 @@ All runtime assets use `go:embed`; the application does not depend on its workin
 - Go port: Olivier Houte / Bilizir, DMA
 
 This port is provided for educational and historical-preservation purposes. The original demo content and music remain the property of their respective creators.
+
+## Optional DCK version
+
+The original implementation remains at its original paths. Run it with `go run ./cmd/tcb-scroller`.
+
+The construction-kit version is in [dck/](dck/README.md). Run `go run ./dck/cmd/tcb-scroller` from this directory. Both versions share the original assets.
