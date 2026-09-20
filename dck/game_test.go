@@ -3,7 +3,6 @@ package tcbscroller
 import (
 	"bytes"
 	"image/png"
-	"math"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -93,113 +92,6 @@ func TestRasterMatchesShaderAssumptions(t *testing.T) {
 		if alpha != 0xffff {
 			t.Fatalf("raster alpha at row %d = %#04x, want opaque", y, alpha)
 		}
-	}
-}
-
-func TestScrollCalculationIsAllocationFree(t *testing.T) {
-	game := &Game{
-		scrollForms: [8]scrollForm{{ySize: 55}},
-		scrollText:  "ABCDEFGHIJKLMNOPQRSTUVWXYZ    ",
-	}
-	game.preprocessScrollText()
-
-	allocs := testing.AllocsPerRun(1000, func() {
-		game.scroll3D(4)
-	})
-	if allocs != 0 {
-		t.Fatalf("scroll3D allocated %.2f objects per call, want 0", allocs)
-	}
-}
-
-func TestScrollRecurrenceMatchesDirectTrigonometry(t *testing.T) {
-	game := &Game{
-		scrollForms: [8]scrollForm{
-			{0, 0, 0, 0, 55, 0, 0},
-			{0, 0, 0, 0, 55, 0, 2},
-			{0, 0, 0, 0, 55, 20, 2},
-			{200, 0, 0, 5, 55, 20, 2},
-			{200, 0, 4, 5, 55, 20, 2},
-			{200, -30, 4, 0, 55, 30, 2},
-			{200, 40, -4, 5, -70, 40, -4},
-			{150, 20, -3, 5, 55, 20, 2},
-		},
-		scrollText: "^0ABCDE^3FGHIJ^5KLMNO^6PQRST^7UVWXYZ          ",
-		scrollX:    13,
-		sinAdder:   2.75,
-	}
-	game.preprocessScrollText()
-	want := *game
-	referenceScroll3D(&want, 4)
-	game.scroll3D(4)
-
-	if game.form != want.form || game.addi != want.addi || game.scrollX != want.scrollX || game.sinAdder != want.sinAdder {
-		t.Fatalf("scroll state = (%d, %d, %g, %g), want (%d, %d, %g, %g)",
-			game.form, game.addi, game.scrollX, game.sinAdder,
-			want.form, want.addi, want.scrollX, want.sinAdder)
-	}
-	for i := range game.printPos {
-		got, expected := game.printPos[i], want.printPos[i]
-		if got.letter != expected.letter || math.Abs(got.x-expected.x) > 1e-10 ||
-			math.Abs(got.y-expected.y) > 1e-10 || math.Abs(got.z-expected.z) > 1e-12 {
-			t.Fatalf("print position %d = %+v, want %+v", i, got, expected)
-		}
-	}
-}
-
-func referenceScroll3D(game *Game, scrollSpeed float64) {
-	game.sinAdder += 0.02
-	for i := range game.printPos {
-		charIdx := game.addi + i
-		if charIdx >= len(game.scrollText) {
-			charIdx -= len(game.scrollText)
-		}
-
-		letter := game.scrollLetters[charIdx]
-		if form := game.scrollFormChanges[charIdx]; form >= 0 {
-			game.form = int(form)
-		}
-		sf := game.scrollForms[game.form]
-		letterZ := sf.zSize*math.Sin(sf.zAdd+float64(charIdx)*sf.zAmount*0.01+game.sinAdder*sf.zSpeed) + 150
-		letterY := sf.ySize*math.Cos(1.5+float64(charIdx)*sf.yAmount*0.01+game.sinAdder*sf.ySpeed) - 4
-		scale := 250.0 / (250.0 + letterZ)
-		letterX := -450.0 + float64(i)*32 - game.scrollX
-		game.printPos[i] = printPos{
-			x:      ((letterX - 16) * scale) + canvasWidth/2.0,
-			y:      ((letterY - 14) * scale) + canvasHeight/2.0,
-			z:      scale,
-			letter: letter,
-		}
-	}
-
-	for i := 1; i < len(game.printPos); i++ {
-		item := game.printPos[i]
-		j := i
-		for j > 0 && game.printPos[j-1].z > item.z {
-			game.printPos[j] = game.printPos[j-1]
-			j--
-		}
-		game.printPos[j] = item
-	}
-
-	game.scrollX += scrollSpeed
-	if game.scrollX >= 32 {
-		game.scrollX -= 32
-		game.addi++
-		if game.addi >= len(game.scrollText) {
-			game.addi = 0
-		}
-	}
-}
-
-func BenchmarkScrollCalculation(b *testing.B) {
-	game := &Game{
-		scrollForms: [8]scrollForm{{ySize: 55}},
-		scrollText:  "ABCDEFGHIJKLMNOPQRSTUVWXYZ    ",
-	}
-	game.preprocessScrollText()
-	b.ReportAllocs()
-	for b.Loop() {
-		game.scroll3D(4)
 	}
 }
 

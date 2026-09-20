@@ -4,9 +4,9 @@ import originalassets "tcb-multi-plane-3d-scroller"
 
 import (
 	"bytes"
+	"github.com/olivierh59500/democonstructionkit/presets"
 
 	"fmt"
-	"github.com/olivierh59500/democonstructionkit/composite"
 	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"image"
 	"image/color"
@@ -49,33 +49,7 @@ var (
 	musicData = originalassets.DCKAssetMusicData()
 )
 
-const scrollShaderSource = `//kage:unit pixels
-
-package main
-
-func Fragment(dstPos vec4, srcPos vec2, custom vec4) vec4 {
-	glyph := imageSrc0UnsafeAt(srcPos)
-	rasterY := floor(custom.r) + 0.5
-	// Coordinates for secondary images use image 0's texture space.
-	raster := imageSrc1UnsafeAt(imageSrc0Origin() + vec2(0.5, rasterY))
-	return vec4(raster.rgb * glyph.a, raster.a * glyph.a)
-}
-`
-
-type scrollForm struct {
-	zSize   float64
-	zAmount float64
-	zSpeed  float64
-	zAdd    float64
-	ySize   float64
-	yAmount float64
-	ySpeed  float64
-}
-
-type printPos struct {
-	x, y, z float64
-	letter  byte
-}
+const scrollShaderSource = scrolling.PlaneShaderSource
 
 // YMPlayer adapts the mono YM synthesizer to Ebitengine's stereo PCM stream.
 type YMPlayer struct {
@@ -157,33 +131,23 @@ func (y *YMPlayer) Close() error {
 
 // Game contains the complete standalone TCB screen.
 type Game struct {
-	scrollRenderer *scrolling.Scrolling
-	scrollBatch    *composite.QuadBatch
-	rasters        *ebiten.Image
-	mountains      *ebiten.Image
-	logo           *ebiten.Image
-	font           *ebiten.Image
+	planes        *scrolling.Planes
+	planeRenderer *scrolling.PlaneRenderer
+	rasters       *ebiten.Image
+	mountains     *ebiten.Image
+	logo          *ebiten.Image
+	font          *ebiten.Image
 
-	logoCenter   *ebiten.Image
-	scrollShader *ebiten.Shader
-	initErr      error
+	logoCenter *ebiten.Image
+	initErr    error
 
-	fontTileRects [128]image.Rectangle
 	stripVertices []ebiten.Vertex
 	stripIndices  []uint16
 
 	bgSpeed [32]float64
 	bgPos   [32]float64
 
-	scrollForms       [8]scrollForm
-	form              int
-	scrollX           float64
-	scrollText        string
-	scrollLetters     []byte
-	scrollFormChanges []int8
-	addi              int
-	sinAdder          float64
-	printPos          [30]printPos
+	scrollText string
 
 	logoSin  []float64
 	dcounter int
@@ -206,17 +170,6 @@ func NewGame() *Game {
 		needsRedraw:   true,
 	}
 
-	g.scrollForms = [8]scrollForm{
-		{0, 0, 0, 0, 55, 0, 0},
-		{0, 0, 0, 0, 55, 0, 2},
-		{0, 0, 0, 0, 55, 20, 2},
-		{200, 0, 0, 5, 55, 20, 2},
-		{200, 0, 4, 5, 55, 20, 2},
-		{200, -30, 4, 0, 55, 30, 2},
-		{200, 40, -4, 5, -70, 40, -4},
-		{150, 20, -3, 5, 55, 20, 2},
-	}
-
 	speeds := [...]float64{8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5}
 	for i, speed := range speeds {
 		g.bgSpeed[i] = speed
@@ -227,12 +180,6 @@ func NewGame() *Game {
 	g.initScrollText()
 	g.preprocessScrollText()
 	g.loadAssets()
-
-	var err error
-	g.scrollShader, err = ebiten.NewShader([]byte(scrollShaderSource))
-	if err != nil {
-		g.initErr = fmt.Errorf("compile scroller shader: %w", err)
-	}
 
 	return g
 }
@@ -287,21 +234,14 @@ func (g *Game) initScrollText() {
 }
 
 func (g *Game) preprocessScrollText() {
-	g.scrollLetters = make([]byte, len(g.scrollText))
-	g.scrollFormChanges = make([]int8, len(g.scrollText))
-	for i := range g.scrollFormChanges {
-		g.scrollFormChanges[i] = -1
-	}
-
-	for i := range g.scrollText {
-		letter := g.scrollText[i]
-		if letter == '^' && i+1 < len(g.scrollText) && g.scrollText[i+1] >= '0' && g.scrollText[i+1] <= '7' {
-			g.scrollFormChanges[i] = int8(g.scrollText[i+1] - '0')
-			letter = g.scrollText[(i-1+len(g.scrollText))%len(g.scrollText)]
-		} else if i >= 2 && g.scrollText[i-1] == '^' && letter >= '0' && letter <= '7' {
-			letter = g.scrollText[i-2]
-		}
-		g.scrollLetters[i] = letter
+	var err error
+	g.planes, err = scrolling.NewPlanes(scrolling.PlanesConfig{
+		Slots: presets.TCBPlaneSlots(g.scrollText, 32), Forms: presets.TCBScrollForms(),
+		Visible: 30, PhaseStep: .02,
+		Projection: scrolling.PlaneProjection{Focal: 250, Depth: 150, OriginX: -450, CenterX: 160, CenterY: 100, XBias: -16, YBias: -14, VerticalOffset: -4},
+	})
+	if err != nil {
+		g.initErr = err
 	}
 }
 
@@ -343,24 +283,15 @@ func (g *Game) loadAssets() {
 }
 
 func (g *Game) cacheFontTileRects() {
-	charMap := [6][10]rune{
-		{0, '!', 0, 0, 0, 0, 0, 0, '(', ')'},
-		{0, 0, ',', 0, '.', 0, 0, 0, 0, 0},
-		{0, 0, 0, 0, 0, 0, ':', ';', 0, 0},
-		{0, 0, 0, 'A', 'B', 'C', 'D', 'E', 'F', 'G'},
-		{'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q'},
-		{'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 0},
+	spec, _ := presets.FindFont("tcb-multi-plane-3d-scroller")
+	metrics, err := spec.Build(g.font.Bounds())
+	if err != nil {
+		g.initErr = err
+		return
 	}
-
-	for row := range charMap {
-		for col, ch := range charMap[row] {
-			if ch == 0 {
-				continue
-			}
-			x := col * 32
-			y := row * 33
-			g.fontTileRects[ch] = image.Rect(x, y, x+32, y+33)
-		}
+	g.planeRenderer, err = scrolling.NewPlaneRenderer(scrolling.Face{Atlas: g.font, Metrics: metrics}, g.rasters)
+	if err != nil {
+		g.initErr = err
 	}
 }
 
@@ -423,71 +354,9 @@ func (g *Game) Update() error {
 	return nil
 }
 
-func (g *Game) scroll3D(scrollSpeed float64) {
-	g.sinAdder += 0.02
-	activeForm := -1
-	previousCharIdx := -2
-	var zSin, zCos, ySin, yCos float64
-	var zStepSin, zStepCos, yStepSin, yStepCos float64
-
-	for i := range g.printPos {
-		charIdx := g.addi + i
-		if charIdx >= len(g.scrollText) {
-			charIdx -= len(g.scrollText)
-		}
-
-		letter := g.scrollLetters[charIdx]
-		if form := g.scrollFormChanges[charIdx]; form >= 0 {
-			g.form = int(form)
-		}
-		sf := g.scrollForms[g.form]
-
-		if activeForm != g.form || charIdx != previousCharIdx+1 {
-			if sf.zSize != 0 {
-				zSin, zCos = math.Sincos(sf.zAdd + float64(charIdx)*sf.zAmount*0.01 + g.sinAdder*sf.zSpeed)
-				zStepSin, zStepCos = math.Sincos(sf.zAmount * 0.01)
-			}
-			ySin, yCos = math.Sincos(1.5 + float64(charIdx)*sf.yAmount*0.01 + g.sinAdder*sf.ySpeed)
-			yStepSin, yStepCos = math.Sincos(sf.yAmount * 0.01)
-			activeForm = g.form
-		} else {
-			if sf.zSize != 0 {
-				zSin, zCos = stepSinCosForward(zSin, zCos, zStepSin, zStepCos)
-			}
-			ySin, yCos = stepSinCosForward(ySin, yCos, yStepSin, yStepCos)
-		}
-		previousCharIdx = charIdx
-
-		letterZ := sf.zSize*zSin + 150
-		letterY := sf.ySize*yCos - 4
-		scale := 250.0 / (250.0 + letterZ)
-		letterX := -450.0 + float64(i)*32 - g.scrollX
-		g.printPos[i] = printPos{
-			x:      ((letterX - 16) * scale) + canvasWidth/2.0,
-			y:      ((letterY - 14) * scale) + canvasHeight/2.0,
-			z:      scale,
-			letter: letter,
-		}
-	}
-
-	// This fixed, tiny list is faster and allocation-free with insertion sort.
-	for i := 1; i < len(g.printPos); i++ {
-		item := g.printPos[i]
-		j := i
-		for j > 0 && g.printPos[j-1].z > item.z {
-			g.printPos[j] = g.printPos[j-1]
-			j--
-		}
-		g.printPos[j] = item
-	}
-
-	g.scrollX += scrollSpeed
-	if g.scrollX >= 32 {
-		g.scrollX -= 32
-		g.addi++
-		if g.addi >= len(g.scrollText) {
-			g.addi = 0
-		}
+func (g *Game) scroll3D(speed float64) {
+	if g.planes != nil {
+		g.initErr = g.planes.Step(speed)
 	}
 }
 
@@ -554,53 +423,9 @@ func (g *Game) appendMountainStrip(layer, xPos, yPos int) {
 }
 
 func (g *Game) drawScroll3D(stage *ebiten.Image) {
-	if g.scrollShader == nil {
-		return
+	if g.planeRenderer != nil {
+		g.planeRenderer.Draw(stage, g.planes.Points(), scrolling.PlaneDraw{OriginX: stageX, OriginY: stageY, ScaleX: 2, ScaleY: 2})
 	}
-	if g.scrollRenderer == nil {
-		var err error
-		g.scrollRenderer, err = scrolling.FromImages(make([]*ebiten.Image, len(g.printPos)), 1)
-		if err != nil {
-			panic(err)
-		}
-		g.scrollBatch = composite.NewQuadBatch(len(g.printPos))
-		g.scrollBatch.AlternateDiagonal = true
-	}
-	g.scrollBatch.Shader = g.scrollShader
-	g.scrollBatch.ShaderOptions.Images[0] = g.font
-	g.scrollBatch.ShaderOptions.Images[1] = g.rasters
-	g.scrollBatch.Begin(stage, g.font)
-	state := scrolling.IdentityState()
-	state.Paint = func(dst *ebiten.Image, s scrolling.Sample, op ebiten.DrawImageOptions) {
-		p := g.printPos[s.Index]
-		if p.letter == 0 || p.z <= 0 {
-			return
-		}
-		ch := rune(p.letter)
-		var r image.Rectangle
-		if ch >= 0 && ch < rune(len(g.fontTileRects)) {
-			r = g.fontTileRects[ch]
-		}
-		if r.Empty() && ch >= 'a' && ch <= 'z' {
-			r = g.fontTileRects[ch-'a'+'A']
-		}
-		if r.Empty() {
-			return
-		}
-		scale := float32(p.z)
-		localY := float32(p.y) - 16.5*scale
-		x, y, w, h := float32(stageX)+2*(float32(p.x)-16*scale), float32(stageY)+2*localY, 64*scale, 66*scale
-		sx, sy := float32(r.Min.X), float32(r.Min.Y)
-		vertices := [4]ebiten.Vertex{
-			{DstX: x, DstY: y, SrcX: sx, SrcY: sy, ColorR: localY, ColorG: 1, ColorB: 1, ColorA: 1},
-			{DstX: x + w, DstY: y, SrcX: sx + 32, SrcY: sy, ColorR: localY, ColorG: 1, ColorB: 1, ColorA: 1},
-			{DstX: x, DstY: y + h, SrcX: sx, SrcY: sy + 33, ColorR: localY + 33*scale, ColorG: 1, ColorB: 1, ColorA: 1},
-			{DstX: x + w, DstY: y + h, SrcX: sx + 32, SrcY: sy + 33, ColorR: localY + 33*scale, ColorG: 1, ColorB: 1, ColorA: 1},
-		}
-		g.scrollBatch.Quad(vertices)
-	}
-	g.scrollRenderer.DrawAt(stage, state)
-	g.scrollBatch.Flush()
 }
 
 func (g *Game) Layout(_, _ int) (int, int) {
@@ -609,6 +434,9 @@ func (g *Game) Layout(_, _ int) (int, int) {
 
 // Cleanup releases the audio resources owned by the game.
 func (g *Game) Cleanup() {
+	if g.planeRenderer != nil {
+		g.planeRenderer.Close()
+	}
 	if g.audioPlayer != nil {
 		_ = g.audioPlayer.Close()
 		g.audioPlayer = nil
