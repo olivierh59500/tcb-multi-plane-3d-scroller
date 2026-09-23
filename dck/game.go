@@ -1,25 +1,24 @@
 package tcbscroller
 
-import originalassets "tcb-multi-plane-3d-scroller"
-
 import (
 	"bytes"
-	"github.com/olivierh59500/democonstructionkit/presets"
-
-	"fmt"
-	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"image"
 	"image/color"
+	originalassets "tcb-multi-plane-3d-scroller"
+
+	kit "github.com/olivierh59500/democonstructionkit"
+	"github.com/olivierh59500/democonstructionkit/motion"
+	"github.com/olivierh59500/democonstructionkit/presets"
+	"github.com/olivierh59500/democonstructionkit/scrolling"
+	"github.com/olivierh59500/democonstructionkit/sound"
+
 	_ "image/png"
-	"io"
 	"log"
-	"math"
-	"sync"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
+
 	audio "github.com/olivierh59500/democonstructionkit/sound/output"
-	"github.com/olivierh59500/ym-player/pkg/stsound"
 )
 
 const (
@@ -51,92 +50,13 @@ var (
 
 const scrollShaderSource = scrolling.PlaneShaderSource
 
-// YMPlayer adapts the mono YM synthesizer to Ebitengine's stereo PCM stream.
-type YMPlayer struct {
-	player *stsound.StSound
-	buffer []int16
-	mutex  sync.Mutex
-	loop   bool
-}
-
-func NewYMPlayer(data []byte, rate int, loop bool) (*YMPlayer, error) {
-	player := stsound.CreateWithRate(rate)
-	if err := player.LoadMemory(data); err != nil {
-		player.Destroy()
-		return nil, fmt.Errorf("load YM data: %w", err)
-	}
-	player.SetLoopMode(loop)
-
-	return &YMPlayer{
-		player: player,
-		buffer: make([]int16, 4096),
-		loop:   loop,
-	}, nil
-}
-
-// Read writes signed 16-bit little-endian stereo PCM directly into p.
-func (y *YMPlayer) Read(p []byte) (n int, err error) {
-	y.mutex.Lock()
-	defer y.mutex.Unlock()
-
-	pcmBytes := len(p) - len(p)%4
-	if pcmBytes == 0 {
-		return 0, nil
-	}
-	if y.player == nil {
-		clear(p[:pcmBytes])
-		return 0, io.EOF
-	}
-
-	samplesNeeded := pcmBytes / 4
-	processed := 0
-	for processed < samplesNeeded {
-		chunkSize := samplesNeeded - processed
-		if chunkSize > len(y.buffer) {
-			chunkSize = len(y.buffer)
-		}
-
-		if !y.player.Compute(y.buffer[:chunkSize], chunkSize) && !y.loop {
-			clear(p[processed*4 : pcmBytes])
-			err = io.EOF
-			break
-		}
-
-		for i := 0; i < chunkSize; i++ {
-			// The old reader applied 0.7 here and another 0.7 on the player.
-			// Halving is allocation-free and preserves essentially the same level.
-			sample := y.buffer[i] / 2
-			offset := (processed + i) * 4
-			p[offset] = byte(sample)
-			p[offset+1] = byte(sample >> 8)
-			p[offset+2] = byte(sample)
-			p[offset+3] = byte(sample >> 8)
-		}
-		processed += chunkSize
-	}
-
-	return pcmBytes, err
-}
-
-func (y *YMPlayer) Close() error {
-	y.mutex.Lock()
-	defer y.mutex.Unlock()
-
-	if y.player != nil {
-		y.player.Destroy()
-		y.player = nil
-	}
-	return nil
-}
-
 // Game contains the complete standalone TCB screen.
 type Game struct {
-	planes        *scrolling.Planes
-	planeRenderer *scrolling.PlaneRenderer
-	rasters       *ebiten.Image
-	mountains     *ebiten.Image
-	logo          *ebiten.Image
-	font          *ebiten.Image
+	scroll    *scrolling.Scrolling
+	rasters   *ebiten.Image
+	mountains *ebiten.Image
+	logo      *ebiten.Image
+	font      *ebiten.Image
 
 	logoCenter *ebiten.Image
 	initErr    error
@@ -158,7 +78,7 @@ type Game struct {
 	audioReady   bool
 	audioContext *audio.Context
 	audioPlayer  *audio.Player
-	ymPlayer     *YMPlayer
+	musicStream  *sound.Stream
 	needsRedraw  bool
 }
 
@@ -178,25 +98,16 @@ func NewGame() *Game {
 
 	g.initLogoSin()
 	g.initScrollText()
-	g.preprocessScrollText()
 	g.loadAssets()
 
 	return g
 }
 
 func (g *Game) initLogoSin() {
-	g.logoSin = make([]float64, 0, 40+(160*5+4)+(160*5+10)+160)
-	for i := 0; i < 40; i++ {
-		g.logoSin = append(g.logoSin, 0)
-	}
-	for i := 0; i < 160*5+4; i++ {
-		g.logoSin = append(g.logoSin, 8*math.Sin(float64(i)*0.05-2))
-	}
-	for i := 0; i < 160*5+10; i++ {
-		g.logoSin = append(g.logoSin, 8*math.Sin(float64(i)*0.15))
-	}
-	for i := 0; i < 160; i++ {
-		g.logoSin = append(g.logoSin, 0)
+	var err error
+	g.logoSin, err = motion.CompileWaveTable(presets.TCBLogoWaveSections()...)
+	if err != nil {
+		g.initErr = err
 	}
 }
 
@@ -231,18 +142,6 @@ func (g *Game) initScrollText() {
 		"REALLY SOMETHING .                    ^7 YOU WILL HAVE " +
 		"TO READ IN THE MAIN SCROLLTEXT FOR MORE GREETINGS....  BYE.............. " +
 		"                                             "
-}
-
-func (g *Game) preprocessScrollText() {
-	var err error
-	g.planes, err = scrolling.NewPlanes(scrolling.PlanesConfig{
-		Slots: presets.TCBPlaneSlots(g.scrollText, 32), Forms: presets.TCBScrollForms(),
-		Visible: 30, PhaseStep: .02,
-		Projection: scrolling.PlaneProjection{Focal: 250, Depth: 150, OriginX: -450, CenterX: 160, CenterY: 100, XBias: -16, YBias: -14, VerticalOffset: -4},
-	})
-	if err != nil {
-		g.initErr = err
-	}
 }
 
 func (g *Game) loadAssets() {
@@ -289,7 +188,9 @@ func (g *Game) cacheFontTileRects() {
 		g.initErr = err
 		return
 	}
-	g.planeRenderer, err = scrolling.NewPlaneRenderer(scrolling.Face{Atlas: g.font, Metrics: metrics}, g.rasters)
+	config := presets.TCBProjectedScroll(g.scrollText, 32, scrolling.Face{Atlas: g.font, Metrics: metrics}, g.rasters)
+	config.Projected.Draw = scrolling.PlaneDraw{OriginX: stageX, OriginY: stageY, ScaleX: 2, ScaleY: 2}
+	g.scroll, err = scrolling.New(config)
 	if err != nil {
 		g.initErr = err
 	}
@@ -299,17 +200,17 @@ func (g *Game) initAudio() {
 	g.audioContext = audio.NewContext(sampleRate)
 
 	var err error
-	g.ymPlayer, err = NewYMPlayer(musicData, sampleRate, true)
+	g.musicStream, err = sound.Open("music.ym", musicData, sound.Options{SampleRate: sampleRate, Loop: true, PCMFormat: sound.PCM16, Gain: 0.5})
 	if err != nil {
-		log.Printf("create YM player: %v", err)
+		log.Printf("open music: %v", err)
 		return
 	}
 
-	g.audioPlayer, err = g.audioContext.NewPlayer(g.ymPlayer)
+	g.audioPlayer, err = g.audioContext.NewPlayer(g.musicStream)
 	if err != nil {
 		log.Printf("create audio player: %v", err)
-		_ = g.ymPlayer.Close()
-		g.ymPlayer = nil
+		_ = g.musicStream.Close()
+		g.musicStream = nil
 		return
 	}
 	g.audioPlayer.Play()
@@ -350,14 +251,10 @@ func (g *Game) Update() error {
 		}
 	}
 
-	g.scroll3D(4)
-	return nil
-}
-
-func (g *Game) scroll3D(speed float64) {
-	if g.planes != nil {
-		g.initErr = g.planes.Step(speed)
+	if g.scroll != nil {
+		g.initErr = g.scroll.Update(kit.Frame{})
 	}
+	return nil
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
@@ -423,8 +320,8 @@ func (g *Game) appendMountainStrip(layer, xPos, yPos int) {
 }
 
 func (g *Game) drawScroll3D(stage *ebiten.Image) {
-	if g.planeRenderer != nil {
-		g.planeRenderer.Draw(stage, g.planes.Points(), scrolling.PlaneDraw{OriginX: stageX, OriginY: stageY, ScaleX: 2, ScaleY: 2})
+	if g.scroll != nil {
+		g.scroll.Draw(stage)
 	}
 }
 
@@ -434,16 +331,16 @@ func (g *Game) Layout(_, _ int) (int, int) {
 
 // Cleanup releases the audio resources owned by the game.
 func (g *Game) Cleanup() {
-	if g.planeRenderer != nil {
-		g.planeRenderer.Close()
+	if g.scroll != nil {
+		g.scroll.Close()
 	}
 	if g.audioPlayer != nil {
 		_ = g.audioPlayer.Close()
 		g.audioPlayer = nil
 	}
-	if g.ymPlayer != nil {
-		_ = g.ymPlayer.Close()
-		g.ymPlayer = nil
+	if g.musicStream != nil {
+		_ = g.musicStream.Close()
+		g.musicStream = nil
 	}
 }
 

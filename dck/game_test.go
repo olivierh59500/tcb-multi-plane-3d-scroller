@@ -5,13 +5,15 @@ import (
 	"image/png"
 	"testing"
 
+	"github.com/olivierh59500/democonstructionkit/sound"
+
 	"github.com/hajimehoshi/ebiten/v2"
 )
 
-func TestYMPlayerReadProducesStereoWithoutAllocating(t *testing.T) {
-	player, err := NewYMPlayer(musicData, sampleRate, true)
+func TestMusicStreamReadProducesStereoWithoutAllocating(t *testing.T) {
+	player, err := sound.Open("music.ym", musicData, sound.Options{SampleRate: sampleRate, Loop: true, PCMFormat: sound.PCM16, Gain: 0.5})
 	if err != nil {
-		t.Fatalf("NewYMPlayer: %v", err)
+		t.Fatalf("sound.Open: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := player.Close(); err != nil {
@@ -51,14 +53,14 @@ func TestYMPlayerReadProducesStereoWithoutAllocating(t *testing.T) {
 		t.Fatalf("allocation-check Read returned %d bytes, want %d", readN, len(buffer))
 	}
 	if allocs != 0 {
-		t.Fatalf("YMPlayer.Read allocated %.2f objects per call, want 0", allocs)
+		t.Fatalf("MusicStream.Read allocated %.2f objects per call, want 0", allocs)
 	}
 }
 
-func TestYMPlayerCloseIsIdempotent(t *testing.T) {
-	player, err := NewYMPlayer(musicData, sampleRate, true)
+func TestMusicStreamCloseIsIdempotent(t *testing.T) {
+	player, err := sound.Open("music.ym", musicData, sound.Options{SampleRate: sampleRate, Loop: true, PCMFormat: sound.PCM16, Gain: 0.5})
 	if err != nil {
-		t.Fatalf("NewYMPlayer: %v", err)
+		t.Fatalf("sound.Open: %v", err)
 	}
 	if err := player.Close(); err != nil {
 		t.Fatalf("first Close: %v", err)
@@ -95,8 +97,8 @@ func TestRasterMatchesShaderAssumptions(t *testing.T) {
 	}
 }
 
-func BenchmarkYMPlayerRead(b *testing.B) {
-	player, err := NewYMPlayer(musicData, sampleRate, true)
+func BenchmarkMusicStreamRead(b *testing.B) {
+	player, err := sound.Open("music.ym", musicData, sound.Options{SampleRate: sampleRate, Loop: true, PCMFormat: sound.PCM16, Gain: 0.5})
 	if err != nil {
 		b.Fatal(err)
 	}
