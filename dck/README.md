@@ -27,3 +27,6 @@ The command captures only the demo canvas and never opens an audio device.
 The central logo now uses `sprites.AxisFlip` with an authored saw cycle, source
 anchor and mirrored back face. Eleven frames around both face changes and later
 motion remain pixel-identical to the preceding DCK renderer.
+The mountains now use `composite.Bands` with `TruncatePhaseX` and the shared
+`presets.TCBMountainBands` recipe. Thirteen captures through fractional strip
+speeds and wrap cycles remain pixel-identical.

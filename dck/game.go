@@ -7,6 +7,7 @@ import (
 	originalassets "tcb-multi-plane-3d-scroller"
 
 	kit "github.com/olivierh59500/democonstructionkit"
+	"github.com/olivierh59500/democonstructionkit/composite"
 	"github.com/olivierh59500/democonstructionkit/motion"
 	"github.com/olivierh59500/democonstructionkit/presets"
 	"github.com/olivierh59500/democonstructionkit/scrolling"
@@ -65,7 +66,7 @@ type Game struct {
 	stripVertices []ebiten.Vertex
 	stripIndices  []uint16
 
-	backgroundMotion *motion.WrapBank
+	mountainBands *composite.Bands
 
 	scrollText string
 
@@ -88,7 +89,7 @@ func NewGame() *Game {
 	}
 
 	var err error
-	g.backgroundMotion, err = motion.NewWrapBank(presets.TCBMountainWrapConfig())
+	g.mountainBands, err = composite.NewBands(presets.TCBMountainBands())
 	if err != nil {
 		g.initErr = err
 		return g
@@ -247,7 +248,7 @@ func (g *Game) Update() error {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 
-	g.backgroundMotion.Step()
+	g.mountainBands.Step()
 
 	g.dcounter++
 	if g.dcounter > len(g.logoSin)-80 {
@@ -271,19 +272,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	screen.Fill(color.Black)
 	stage := screen.SubImage(image.Rect(stageX, stageY, stageX+640, stageY+400)).(*ebiten.Image)
 
-	g.stripVertices = g.stripVertices[:0]
-	g.stripIndices = g.stripIndices[:0]
-	for i := 0; i < 16; i++ {
-		xPos := int(g.backgroundMotion.At(i)) * 2
-		yPos := i * 10
-		g.appendMountainStrip(i, xPos, yPos)
-	}
-	for i := 16; i < 32; i++ {
-		xPos := int(g.backgroundMotion.At(i)) * 2
-		yPos := i*10 + 84
-		g.appendMountainStrip(i, xPos, yPos)
-	}
-	stage.DrawTriangles(g.stripVertices, g.stripIndices, g.mountains, nil)
+	g.mountainBands.DrawAt(stage, g.mountains, stageX, stageY)
 
 	g.stripVertices = g.stripVertices[:0]
 	g.stripIndices = g.stripIndices[:0]
@@ -303,16 +292,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.centerFlip.DrawAtWith(screen, 160, 88, parent)
 
 	g.drawScroll3D(stage)
-}
-
-func (g *Game) appendMountainStrip(layer, xPos, yPos int) {
-	for _, offset := range [...]int{0, 640} {
-		g.stripVertices, g.stripIndices = appendTexturedQuad(
-			g.stripVertices, g.stripIndices,
-			float32(stageX+xPos+offset), float32(stageY+yPos), 1024, 10,
-			0, float32(layer*10), 1024, 10,
-		)
-	}
 }
 
 func (g *Game) drawScroll3D(stage *ebiten.Image) {
