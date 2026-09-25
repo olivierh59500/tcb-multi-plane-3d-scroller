@@ -63,15 +63,11 @@ type Game struct {
 	logoCenter *ebiten.Image
 	initErr    error
 
-	stripVertices []ebiten.Vertex
-	stripIndices  []uint16
-
 	mountainBands *composite.Bands
+	logoRows      *composite.ProfileImage
 
 	scrollText string
 
-	logoSin    []float64
-	dcounter   int
 	centerFlip *sprites.AxisFlip
 
 	audioReady   bool
@@ -82,11 +78,7 @@ type Game struct {
 }
 
 func NewGame() *Game {
-	g := &Game{
-		stripVertices: make([]ebiten.Vertex, 0, 64*4),
-		stripIndices:  make([]uint16, 0, 64*6),
-		needsRedraw:   true,
-	}
+	g := &Game{needsRedraw: true}
 
 	var err error
 	g.mountainBands, err = composite.NewBands(presets.TCBMountainBands())
@@ -95,10 +87,22 @@ func NewGame() *Game {
 		return g
 	}
 
-	g.initLogoSin()
 	g.initScrollText()
 	g.loadAssets()
 	if g.initErr != nil {
+		return g
+	}
+	profile, err := motion.CompileWaveTable(presets.TCBLogoWaveSections()...)
+	if err != nil {
+		g.initErr = err
+		return g
+	}
+	logoConfig := presets.TCBLogoRowProfile(profile, 303)
+	logoConfig.ScaleX, logoConfig.ScaleY = 2, 2
+	logoConfig.OutputX, logoConfig.OutputY = stageX, stageY
+	g.logoRows, err = composite.NewProfileImage(g.logo.SubImage(image.Rect(0, 16, 303, 48)).(*ebiten.Image), logoConfig)
+	if err != nil {
+		g.initErr = err
 		return g
 	}
 	g.centerFlip, err = sprites.NewAxisFlip(sprites.AxisFlipConfig{
@@ -119,14 +123,6 @@ func NewSilentGame() *Game {
 	game := NewGame()
 	game.audioReady = true
 	return game
-}
-
-func (g *Game) initLogoSin() {
-	var err error
-	g.logoSin, err = motion.CompileWaveTable(presets.TCBLogoWaveSections()...)
-	if err != nil {
-		g.initErr = err
-	}
 }
 
 func (g *Game) initScrollText() {
@@ -250,10 +246,7 @@ func (g *Game) Update() error {
 
 	g.mountainBands.Step()
 
-	g.dcounter++
-	if g.dcounter > len(g.logoSin)-80 {
-		g.dcounter = 0
-	}
+	g.logoRows.Advance()
 
 	g.centerFlip.Step()
 
@@ -274,17 +267,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	g.mountainBands.DrawAt(stage, g.mountains, stageX, stageY)
 
-	g.stripVertices = g.stripVertices[:0]
-	g.stripIndices = g.stripIndices[:0]
-	for i := 0; i < 32; i++ {
-		xOffset := g.logoSin[g.dcounter+i]
-		g.stripVertices, g.stripIndices = appendTexturedQuad(
-			g.stripVertices, g.stripIndices,
-			float32(stageX+2*(8+xOffset)), float32(stageY+2*(96+i)), 606, 2,
-			0, float32(16+i), 303, 1,
-		)
-	}
-	screen.DrawTriangles(g.stripVertices, g.stripIndices, g.logo, nil)
+	g.logoRows.Draw(screen)
 
 	parent := ebiten.GeoM{}
 	parent.Scale(2, 2)
@@ -309,6 +292,9 @@ func (g *Game) Cleanup() {
 	if g.scroll != nil {
 		g.scroll.Close()
 	}
+	if g.logoRows != nil {
+		_ = g.logoRows.Close()
+	}
 	if g.audioPlayer != nil {
 		_ = g.audioPlayer.Close()
 		g.audioPlayer = nil
@@ -317,18 +303,6 @@ func (g *Game) Cleanup() {
 		_ = g.musicStream.Close()
 		g.musicStream = nil
 	}
-}
-
-func appendTexturedQuad(vertices []ebiten.Vertex, indices []uint16, dstX, dstY, dstWidth, dstHeight, srcX, srcY, srcWidth, srcHeight float32) ([]ebiten.Vertex, []uint16) {
-	base := uint16(len(vertices))
-	vertices = append(vertices,
-		ebiten.Vertex{DstX: dstX, DstY: dstY, SrcX: srcX, SrcY: srcY, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
-		ebiten.Vertex{DstX: dstX + dstWidth, DstY: dstY, SrcX: srcX + srcWidth, SrcY: srcY, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
-		ebiten.Vertex{DstX: dstX, DstY: dstY + dstHeight, SrcX: srcX, SrcY: srcY + srcHeight, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
-		ebiten.Vertex{DstX: dstX + dstWidth, DstY: dstY + dstHeight, SrcX: srcX + srcWidth, SrcY: srcY + srcHeight, ColorR: 1, ColorG: 1, ColorB: 1, ColorA: 1},
-	)
-	indices = append(indices, base, base+1, base+2, base+1, base+2, base+3)
-	return vertices, indices
 }
 
 func stepSinCosForward(sinValue, cosValue, sinStep, cosStep float64) (float64, float64) {

@@ -30,3 +30,6 @@ motion remain pixel-identical to the preceding DCK renderer.
 The mountains now use `composite.Bands` with `TruncatePhaseX` and the shared
 `presets.TCBMountainBands` recipe. Thirteen captures through fractional strip
 speeds and wrap cycles remain pixel-identical.
+The large logo's 32-row warp now uses `composite.ProfileImage`, including its
+strict phase reset and 2× viewport mapping. Ten captures at the wave-section
+joins and wrap remain pixel-identical; the local quad builder is gone.
