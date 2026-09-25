@@ -103,6 +103,14 @@ func NewGame() *Game {
 	return g
 }
 
+// NewSilentGame creates the same visual scene without starting a device audio
+// stream, so deterministic frame capture can run without affecting playback.
+func NewSilentGame() *Game {
+	game := NewGame()
+	game.audioReady = true
+	return game
+}
+
 func (g *Game) initLogoSin() {
 	var err error
 	g.logoSin, err = motion.CompileWaveTable(presets.TCBLogoWaveSections()...)

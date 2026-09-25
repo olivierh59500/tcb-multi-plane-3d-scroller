@@ -16,3 +16,11 @@ The demo now delegates plane motion and rendering to `scrolling.Planes` and `Pla
 Each form is independently available as `PlaneForm.Mode` in `scrolling.New`, alongside `Normal`, `Bounce`, `Sine`, `Zoom`, `Perspective` and DNA. Supply any configured font, then choose effects with `{shape:name}` or `ModeSequence`. The standalone example `examples/scrollmodes` in the DCK module demonstrates mixed fonts and both scheduling mechanisms.
 
 See the [DCK effect configuration guide](../../../lib/democonstructionkit/docs/EFFECT_OPTIONS.md) for the shared API and examples.
+
+For silent, deterministic native frames of this version, run:
+
+```sh
+go run ./dck/cmd/capture -frames 0,12,13,38,39,240 -out captures/tcb
+```
+
+The command captures only the demo canvas and never opens an audio device.
