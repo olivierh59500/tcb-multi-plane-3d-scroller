@@ -24,3 +24,6 @@ go run ./dck/cmd/capture -frames 0,12,13,38,39,240 -out captures/tcb
 ```
 
 The command captures only the demo canvas and never opens an audio device.
+The central logo now uses `sprites.AxisFlip` with an authored saw cycle, source
+anchor and mirrored back face. Eleven frames around both face changes and later
+motion remain pixel-identical to the preceding DCK renderer.

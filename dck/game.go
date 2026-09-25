@@ -11,6 +11,7 @@ import (
 	"github.com/olivierh59500/democonstructionkit/presets"
 	"github.com/olivierh59500/democonstructionkit/scrolling"
 	"github.com/olivierh59500/democonstructionkit/sound"
+	"github.com/olivierh59500/democonstructionkit/sprites"
 
 	_ "image/png"
 	"log"
@@ -68,11 +69,9 @@ type Game struct {
 
 	scrollText string
 
-	logoSin  []float64
-	dcounter int
-	rotPos   float64
-	rotAdd   float64
-	next     int
+	logoSin    []float64
+	dcounter   int
+	centerFlip *sprites.AxisFlip
 
 	audioReady   bool
 	audioContext *audio.Context
@@ -85,7 +84,6 @@ func NewGame() *Game {
 	g := &Game{
 		stripVertices: make([]ebiten.Vertex, 0, 64*4),
 		stripIndices:  make([]uint16, 0, 64*6),
-		rotAdd:        1,
 		needsRedraw:   true,
 	}
 
@@ -99,6 +97,17 @@ func NewGame() *Game {
 	g.initLogoSin()
 	g.initScrollText()
 	g.loadAssets()
+	if g.initErr != nil {
+		return g
+	}
+	g.centerFlip, err = sprites.NewAxisFlip(sprites.AxisFlipConfig{
+		Front: g.logoCenter, Saw: &motion.SawToggleConfig{Start: 0, Velocity: .08, Boundary: 1, Restart: -1},
+		UseAnchor: true, AnchorX: 40, AnchorY: 8, BackMirrorY: true, BackMirrorShift: 16,
+		Filter: ebiten.FilterNearest, Blend: ebiten.BlendSourceOver,
+	})
+	if err != nil {
+		g.initErr = err
+	}
 
 	return g
 }
@@ -245,14 +254,7 @@ func (g *Game) Update() error {
 		g.dcounter = 0
 	}
 
-	g.rotPos += g.rotAdd * 0.08
-	if g.rotPos > 1 {
-		g.rotPos = -1
-		g.next++
-		if g.next > 1 {
-			g.next = 0
-		}
-	}
+	g.centerFlip.Step()
 
 	if g.scroll != nil {
 		g.initErr = g.scroll.Update(kit.Frame{})
@@ -295,19 +297,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	screen.DrawTriangles(g.stripVertices, g.stripIndices, g.logo, nil)
 
-	if g.logoCenter != nil {
-		op := &ebiten.DrawImageOptions{}
-		if g.next != 0 {
-			op.GeoM.Scale(1, -1)
-			op.GeoM.Translate(0, 16)
-		}
-		op.GeoM.Translate(-40, -8)
-		op.GeoM.Scale(1, g.rotPos)
-		op.GeoM.Translate(160, 88)
-		op.GeoM.Scale(2, 2)
-		op.GeoM.Translate(stageX, stageY)
-		screen.DrawImage(g.logoCenter, op)
-	}
+	parent := ebiten.GeoM{}
+	parent.Scale(2, 2)
+	parent.Translate(stageX, stageY)
+	g.centerFlip.DrawAtWith(screen, 160, 88, parent)
 
 	g.drawScroll3D(stage)
 }
