@@ -64,8 +64,7 @@ type Game struct {
 	stripVertices []ebiten.Vertex
 	stripIndices  []uint16
 
-	bgSpeed [32]float64
-	bgPos   [32]float64
+	backgroundMotion *motion.WrapBank
 
 	scrollText string
 
@@ -90,10 +89,11 @@ func NewGame() *Game {
 		needsRedraw:   true,
 	}
 
-	speeds := [...]float64{8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5}
-	for i, speed := range speeds {
-		g.bgSpeed[i] = speed
-		g.bgSpeed[i+16] = speed
+	var err error
+	g.backgroundMotion, err = motion.NewWrapBank(presets.TCBMountainWrapConfig())
+	if err != nil {
+		g.initErr = err
+		return g
 	}
 
 	g.initLogoSin()
@@ -230,12 +230,7 @@ func (g *Game) Update() error {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 
-	for i := range g.bgPos {
-		g.bgPos[i] -= g.bgSpeed[i]
-		if g.bgPos[i] <= -256 {
-			g.bgPos[i] += 256
-		}
-	}
+	g.backgroundMotion.Step()
 
 	g.dcounter++
 	if g.dcounter > len(g.logoSin)-80 {
@@ -269,12 +264,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.stripVertices = g.stripVertices[:0]
 	g.stripIndices = g.stripIndices[:0]
 	for i := 0; i < 16; i++ {
-		xPos := int(g.bgPos[i]) * 2
+		xPos := int(g.backgroundMotion.At(i)) * 2
 		yPos := i * 10
 		g.appendMountainStrip(i, xPos, yPos)
 	}
 	for i := 16; i < 32; i++ {
-		xPos := int(g.bgPos[i]) * 2
+		xPos := int(g.backgroundMotion.At(i)) * 2
 		yPos := i*10 + 84
 		g.appendMountainStrip(i, xPos, yPos)
 	}
