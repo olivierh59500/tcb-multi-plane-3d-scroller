@@ -7,7 +7,7 @@ import (
 	originalassets "tcb-multi-plane-3d-scroller"
 
 	kit "github.com/olivierh59500/democonstructionkit"
-	"github.com/olivierh59500/democonstructionkit/composite"
+	"github.com/olivierh59500/democonstructionkit/effects"
 	"github.com/olivierh59500/democonstructionkit/motion"
 	"github.com/olivierh59500/democonstructionkit/presets"
 	"github.com/olivierh59500/democonstructionkit/scrolling"
@@ -54,21 +54,15 @@ const scrollShaderSource = scrolling.PlaneShaderSource
 
 // Game contains the complete standalone TCB screen.
 type Game struct {
-	scroll    *scrolling.Scrolling
 	rasters   *ebiten.Image
 	mountains *ebiten.Image
 	logo      *ebiten.Image
 	font      *ebiten.Image
 
-	logoCenter *ebiten.Image
-	initErr    error
-
-	mountainBands *composite.Bands
-	logoRows      *composite.ProfileImage
+	part    *effects.MultiPlaneScene
+	initErr error
 
 	scrollText string
-
-	centerFlip *sprites.AxisFlip
 
 	audioReady   bool
 	audioContext *audio.Context
@@ -79,40 +73,12 @@ type Game struct {
 
 func NewGame() *Game {
 	g := &Game{needsRedraw: true}
-
-	var err error
-	g.mountainBands, err = composite.NewBands(presets.TCBMountainBands())
-	if err != nil {
-		g.initErr = err
-		return g
-	}
-
 	g.initScrollText()
 	g.loadAssets()
 	if g.initErr != nil {
 		return g
 	}
-	profile, err := motion.CompileWaveTable(presets.TCBLogoWaveSections()...)
-	if err != nil {
-		g.initErr = err
-		return g
-	}
-	logoConfig := presets.TCBLogoRowProfile(profile, 303)
-	logoConfig.ScaleX, logoConfig.ScaleY = 2, 2
-	logoConfig.OutputX, logoConfig.OutputY = stageX, stageY
-	g.logoRows, err = composite.NewProfileImage(g.logo.SubImage(image.Rect(0, 16, 303, 48)).(*ebiten.Image), logoConfig)
-	if err != nil {
-		g.initErr = err
-		return g
-	}
-	g.centerFlip, err = sprites.NewAxisFlip(sprites.AxisFlipConfig{
-		Front: g.logoCenter, Saw: &motion.SawToggleConfig{Start: 0, Velocity: .08, Boundary: 1, Restart: -1},
-		UseAnchor: true, AnchorX: 40, AnchorY: 8, BackMirrorY: true, BackMirrorShift: 16,
-		Filter: ebiten.FilterNearest, Blend: ebiten.BlendSourceOver,
-	})
-	if err != nil {
-		g.initErr = err
-	}
+	g.initErr = g.initMultiPlaneScene()
 
 	return g
 }
@@ -183,7 +149,6 @@ func (g *Game) loadAssets() {
 	} else {
 		g.logo = ebiten.NewImageFromImage(img)
 	}
-	g.logoCenter = g.logo.SubImage(image.Rect(114, 0, 193, 15)).(*ebiten.Image)
 
 	img, _, err = image.Decode(bytes.NewReader(fontData))
 	if err != nil {
@@ -192,22 +157,36 @@ func (g *Game) loadAssets() {
 	} else {
 		g.font = ebiten.NewImageFromImage(img)
 	}
-	g.cacheFontTileRects()
 }
 
-func (g *Game) cacheFontTileRects() {
+func (g *Game) initMultiPlaneScene() error {
 	spec, _ := presets.FindFont("tcb-multi-plane-3d-scroller")
 	metrics, err := spec.Build(g.font.Bounds())
 	if err != nil {
-		g.initErr = err
-		return
+		return err
 	}
-	config := presets.TCBProjectedScroll(g.scrollText, 32, scrolling.Face{Atlas: g.font, Metrics: metrics}, g.rasters)
-	config.Projected.Draw = scrolling.PlaneDraw{OriginX: stageX, OriginY: stageY, ScaleX: 2, ScaleY: 2}
-	g.scroll, err = scrolling.New(config)
+	scrollConfig := presets.TCBProjectedScroll(g.scrollText, 32, scrolling.Face{Atlas: g.font, Metrics: metrics}, g.rasters)
+	scrollConfig.Projected.Draw = scrolling.PlaneDraw{OriginX: stageX, OriginY: stageY, ScaleX: 2, ScaleY: 2}
+	profile, err := motion.CompileWaveTable(presets.TCBLogoWaveSections()...)
 	if err != nil {
-		g.initErr = err
+		return err
 	}
+	rows := presets.TCBLogoRowProfile(profile, 303)
+	rows.ScaleX, rows.ScaleY = 2, 2
+	rows.OutputX, rows.OutputY = stageX, stageY
+	g.part, err = effects.NewMultiPlaneScene(effects.MultiPlaneSceneConfig{
+		Mountains: g.mountains, Logo: g.logo,
+		LogoSource: image.Rect(0, 16, 303, 48), CenterSource: image.Rect(114, 0, 193, 15),
+		Bands: presets.TCBMountainBands(), Rows: rows,
+		Center: sprites.AxisFlipConfig{
+			Saw:       &motion.SawToggleConfig{Start: 0, Velocity: .08, Boundary: 1, Restart: -1},
+			UseAnchor: true, AnchorX: 40, AnchorY: 8, BackMirrorY: true, BackMirrorShift: 16,
+			Filter: ebiten.FilterNearest, Blend: ebiten.BlendSourceOver,
+		},
+		Scroll: scrollConfig, Viewport: image.Rect(stageX, stageY, stageX+640, stageY+400),
+		StageSize: image.Pt(320, 200), CenterX: 160, CenterY: 88, Filter: ebiten.FilterNearest,
+	})
+	return err
 }
 
 func (g *Game) initAudio() {
@@ -244,16 +223,8 @@ func (g *Game) Update() error {
 		ebiten.SetFullscreen(!ebiten.IsFullscreen())
 	}
 
-	g.mountainBands.Step()
-
-	g.logoRows.Advance()
-
-	g.centerFlip.Step()
-
-	if g.scroll != nil {
-		g.initErr = g.scroll.Update(kit.Frame{})
-	}
-	return nil
+	g.initErr = g.part.Update(kit.Frame{})
+	return g.initErr
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
@@ -263,24 +234,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.needsRedraw = false
 
 	screen.Fill(color.Black)
-	stage := screen.SubImage(image.Rect(stageX, stageY, stageX+640, stageY+400)).(*ebiten.Image)
-
-	g.mountainBands.DrawAt(stage, g.mountains, stageX, stageY)
-
-	g.logoRows.Draw(screen)
-
-	parent := ebiten.GeoM{}
-	parent.Scale(2, 2)
-	parent.Translate(stageX, stageY)
-	g.centerFlip.DrawAtWith(screen, 160, 88, parent)
-
-	g.drawScroll3D(stage)
-}
-
-func (g *Game) drawScroll3D(stage *ebiten.Image) {
-	if g.scroll != nil {
-		g.scroll.Draw(stage)
-	}
+	g.part.Draw(screen)
 }
 
 func (g *Game) Layout(_, _ int) (int, int) {
@@ -289,11 +243,8 @@ func (g *Game) Layout(_, _ int) (int, int) {
 
 // Cleanup releases the audio resources owned by the game.
 func (g *Game) Cleanup() {
-	if g.scroll != nil {
-		g.scroll.Close()
-	}
-	if g.logoRows != nil {
-		_ = g.logoRows.Close()
+	if g.part != nil {
+		_ = g.part.Close()
 	}
 	if g.audioPlayer != nil {
 		_ = g.audioPlayer.Close()
