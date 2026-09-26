@@ -3,6 +3,19 @@
 set -eu
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+# Preserve the original as the default Android build.
+mobile_package=./mobile
+if [ "$#" -gt 1 ]; then
+	echo "Usage: $0 [--dck]" >&2
+	exit 2
+fi
+case "${1:-}" in
+	"") ;;
+	--dck) mobile_package=./dck/mobile ;;
+	*) echo "Usage: $0 [--dck]" >&2; exit 2 ;;
+esac
+
 android_sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}
 java_home_path=${JAVA_HOME:-}
 
@@ -65,7 +78,7 @@ go run github.com/hajimehoshi/ebiten/v2/cmd/ebitenmobile@v2.9.11 \
 	-androidapi 23 \
 	-javapkg com.olivierh59500.tcbscroller \
 	-o android/app/libs/tcbscroller.aar \
-	./mobile
+	"$mobile_package"
 
 echo "Building the debug APK"
 "$project_root/android/gradlew" \
