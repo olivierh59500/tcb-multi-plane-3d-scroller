@@ -35,3 +35,17 @@ strict phase reset and 2× viewport mapping. Ten captures at the wave-section
 joins and wrap match the earlier per-row sine distortion in all color channels.
 `effects.MultiPlaneScene` now owns the four effects and their layer order; this
 entry point supplies artwork, text, music and viewport parameters.
+
+An opt-in reference capture runs the preserved Go implementation without
+opening an audio device:
+
+```sh
+TCB_ORIGINAL_CAPTURES=/tmp/tcb-original go test -tags=tcb_original_rendercheck . -run '^$'
+go run ./dck/cmd/capture -frames 0,1,39,40,41,60,240,600,843,844,845,1200,1653,1654,1655,1734,1735,1736,2400,4800,9600 -out /tmp/tcb-dck
+diff -qr /tmp/tcb-original /tmp/tcb-dck
+```
+
+All 21 complete PNG frames match byte for byte, including both wave-section
+joins, the strict logo phase reset, mountain wrapping and later scroll forms.
+This proves parity with the preserved Go original at those ticks; it does not
+compare either version with an Atari ST recording.
