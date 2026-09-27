@@ -255,7 +255,3 @@ func (g *Game) Cleanup() {
 		g.musicStream = nil
 	}
 }
-
-func stepSinCosForward(sinValue, cosValue, sinStep, cosStep float64) (float64, float64) {
-	return sinValue*cosStep + cosValue*sinStep, cosValue*cosStep - sinValue*sinStep
-}
