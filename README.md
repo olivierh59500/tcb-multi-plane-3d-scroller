@@ -4,6 +4,25 @@ A Go/Ebitengine port of The CareBears' “Super-Multi-Plane-3D-Scroller-And-A-Wh
 
 The demo includes the original 3D bending scrolltext, 32 parallax mountain strips, line-distorted TCB logo, rotating emblem, raster colors, and Mad Max's *Thundercats* YM music.
 
+<!-- Project showcase -->
+## Screenshots
+
+[![The Carebears logo and layered 3D scrolltext between textured planes](docs/media/screenshot-1.png)](docs/media/screenshot-1.png)
+
+The Carebears logo and layered 3D scrolltext between textured planes.
+
+## Video
+
+[![Animated preview of TCB Multi Plane 3D Scroller](docs/media/preview.gif)](https://github.com/olivierh59500/tcb-multi-plane-3d-scroller/raw/refs/heads/main/docs/media/preview.mp4)
+
+**[Watch or download the 24-second MP4 preview with sound](https://github.com/olivierh59500/tcb-multi-plane-3d-scroller/raw/refs/heads/main/docs/media/preview.mp4)**
+
+This preview is captured from the Go production.
+
+The animated image is silent; the MP4 includes the soundtrack.
+
+<!-- End project showcase -->
+
 ## Requirements
 
 - Go 1.25 or newer
