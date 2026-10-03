@@ -7,9 +7,17 @@ The demo includes the original 3D bending scrolltext, 32 parallax mountain strip
 <!-- Project showcase -->
 ## Screenshots
 
-[![The Carebears logo and layered 3D scrolltext between textured planes](docs/media/screenshot-1.png)](docs/media/screenshot-1.png)
+[![Layered scrolling with the waving Carebears logo](docs/media/screenshot-1.png)](docs/media/screenshot-1.png)
 
-The Carebears logo and layered 3D scrolltext between textured planes.
+Layered scrolling with the waving Carebears logo.
+
+[![Enlarged sine-wave scrolltext](docs/media/screenshot-2.png)](docs/media/screenshot-2.png)
+
+Enlarged sine-wave scrolltext.
+
+[![Scrolltext bending through 3D depth](docs/media/screenshot-3.png)](docs/media/screenshot-3.png)
+
+Scrolltext bending through 3D depth.
 
 ## Video
 
@@ -17,7 +25,7 @@ The Carebears logo and layered 3D scrolltext between textured planes.
 
 **[Watch or download the 24-second MP4 preview with sound](https://github.com/olivierh59500/tcb-multi-plane-3d-scroller/raw/refs/heads/main/docs/media/preview.mp4)**
 
-This preview is captured from the Go production.
+This short showcase combines selected passages from the Go production.
 
 The animated image is silent; the MP4 includes the soundtrack.
 
